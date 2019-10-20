@@ -43,6 +43,16 @@ rules:
   - create
   - patch
   - update
+- apiGroups: [""]
+  resources:
+  - configmaps
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - watch
+  - update
 - apiGroups: ["security.openshift.io"]
   resources:
   - securitycontextconstraints

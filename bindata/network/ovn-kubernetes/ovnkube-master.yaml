@@ -8,7 +8,7 @@ metadata:
       This daemonset launches the ovn-kubernetes controller (master) networking components.
     release.openshift.io/version: "{{.ReleaseVersion}}"
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       name: ovnkube-master
@@ -51,7 +51,7 @@ spec:
             source /env/_master
             set +o allexport
           fi
-          exec ovn-northd --no-chdir "-vconsole:${OVN_LOG_LEVEL}" -vfile:off --pidfile=/var/run/openvswitch/ovn-northd.pid
+          exec ovn-northd --no-chdir "-vconsole:${OVN_LOG_LEVEL}" -vfile:off --pidfile=/var/run/openvswitch/ovn-northd.pid --unixctl=ovn-northd.ctl
         env:
         - name: OVN_LOG_LEVEL
           value: info
@@ -85,22 +85,6 @@ spec:
           exec /usr/share/openvswitch/scripts/ovn-ctl run_nb_ovsdb \
             --no-monitor \
             --ovn-nb-log="-vconsole:${OVN_LOG_LEVEL} -vfile:off"
-        lifecycle:
-          postStart:
-            exec:
-              command:
-              - /bin/bash
-              - -c
-              - |
-                retries=0
-                while ! ovn-nbctl -t 5 set-connection ptcp:{{.OVN_NB_PORT}} -- set connection . inactivity_probe=0; do
-                  (( retries += 1 ))
-                  if [[ "${retries}" -gt 40 ]]; then
-                    echo "too many failed ovn-nbctl attempts, giving up"
-                    exit 1
-                  fi
-                  sleep 2
-                done
         env:
         - name: OVN_LOG_LEVEL
           value: info
@@ -137,22 +121,6 @@ spec:
         env:
         - name: OVN_LOG_LEVEL
           value: info
-        lifecycle:
-          postStart:
-            exec:
-              command:
-              - /bin/bash
-              - -c
-              - |
-                retries=0
-                while ! ovn-sbctl -t 5 set-connection ptcp:{{.OVN_SB_PORT}} -- set connection . inactivity_probe=0; do
-                  (( retries += 1 ))
-                  if [[ "${retries}" -gt 40 ]]; then
-                    echo "too many failed ovn-sbctl attempts, giving up"
-                    exit 1
-                  fi
-                  sleep 2
-                done
         volumeMounts:
         - mountPath: /etc/openvswitch/
           name: etc-openvswitch
@@ -184,7 +152,11 @@ spec:
             --ovn-config-namespace openshift-ovn-kubernetes \
             --nodeport \
             --loglevel "${OVN_KUBE_LOG_LEVEL}" \
-            --logfile /dev/stdout
+            --logfile /dev/stdout \
+            --manage-db-servers \
+            --pod-ip "${POD_IP}" \
+            --nb-port "{{.OVN_NB_PORT}}" \
+            --sb-port "{{.OVN_SB_PORT}}"
         volumeMounts:
         - mountPath: /etc/openvswitch/
           name: etc-openvswitch
@@ -215,6 +187,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
       nodeSelector:
         node-role.kubernetes.io/master: ""
         beta.kubernetes.io/os: "linux"
